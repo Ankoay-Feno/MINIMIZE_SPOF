@@ -1,28 +1,27 @@
 # Microservices stack
 
-## PostgreSQL primary + replica + Pgpool-II
+## PostgreSQL failover automatique (Patroni + etcd)
 
-Cette stack suit l'approche de la doc que tu as fournie, avec Pgpool-II:
-- `postgres_primary` (read/write)
-- `postgres_replica` (read-only, alimentee par `pg_basebackup`)
-- `pgpool` (point d'entree unique pour le backend)
+Cette stack utilise un failover automatique:
+- `etcd` (DCS Patroni)
+- `patroni_1` et `patroni_2` (election primary/replica automatique)
+- `pgpool_1` et `pgpool_2` (routage SQL)
+- `haproxy_db` (TCP 5432 devant les 2 pgpool)
+- `haproxy_1` et `haproxy_2` (HTTP web/API)
 
 Fichiers utilises:
-- `postgres/00_init.sql`
 - `docker-compose.yaml`
-
-Le script SQL cree:
-- l'utilisateur de replication `replicator`
-- le slot physique `replication_slot`
+- `pgpool/pgpool.conf`
+- `haproxy/haproxy-db.cfg`
 
 ## Connexion backend
 
 Le backend ecrit sur:
-- host: `pgpool`
+- host: `haproxy_db`
 - port: `5432`
-- database: `app_db`
-- user: `app_user`
-- password: `app_password`
+- database: `postgres`
+- user: `postgres`
+- password: `postgres_password`
 
 Ces variables sont dans:
 - `backend/.env`
@@ -36,5 +35,12 @@ Demarrage:
 Arret + suppression des volumes:
 `docker compose -f docker-compose.yaml down -v`
 
-Verifier la replication (slot cote primary):
-`docker compose -f docker-compose.yaml exec -T postgres_primary psql -U app_user -d app_db -c "select slot_name, active, restart_lsn from pg_replication_slots;"`
+Verifier les noeuds pgpool:
+`docker compose -f docker-compose.yaml exec -T pgpool_1 sh -lc "PGPASSWORD=postgres_password psql -h localhost -U postgres -d postgres -c 'show pool_nodes;'"`
+
+Verifier le leader Patroni:
+`docker compose -f docker-compose.yaml exec -T patroni_1 curl -fsS http://localhost:8008/cluster`
+
+Ports web:
+- `http://localhost:80` via `haproxy_1`
+- `http://localhost:8080` via `haproxy_2`

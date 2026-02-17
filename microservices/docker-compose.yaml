@@ -6,7 +6,7 @@ services:
     env_file:
       - ./backend/.env
     depends_on:
-      pgpool:
+      haproxy_db:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -26,7 +26,7 @@ services:
     env_file:
       - ./backend/.env
     depends_on:
-      pgpool:
+      haproxy_db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
@@ -67,9 +67,9 @@ services:
     networks:
       - lb-net
 
-  haproxy:
+  haproxy_1:
     image: haproxy:2.9
-    container_name: haproxy
+    restart: always
     ports:
       - "80:80"
     volumes:
@@ -83,65 +83,70 @@ services:
     networks:
       - lb-net
 
-  postgres_primary:
-    image: postgres:16-alpine
-    user: postgres
+  haproxy_2:
+    image: haproxy:2.9
     restart: always
     ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: app_user
-      POSTGRES_DB: app_db
-      POSTGRES_PASSWORD: app_password
-      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all 0.0.0.0/0 md5"
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
-    command: >
-      postgres
-      -c wal_level=replica
-      -c hot_standby=on
-      -c max_wal_senders=10
-      -c max_replication_slots=10
-      -c hot_standby_feedback=on
+      - "8080:80"
     volumes:
-      - ./postgres_primary_data:/var/lib/postgresql/data
-      - ./postgres/00_init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user --dbname=app_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      backend_1:
+        condition: service_healthy
+      backend_2:
+        condition: service_healthy
     networks:
       - lb-net
 
-  postgres_replica:
-    image: postgres:16-alpine
-    user: postgres
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.16
     restart: always
-    ports:
-      - "5433:5432"
     environment:
-      PGUSER: replicator
-      PGPASSWORD: replicator_password
+      - ETCDCTL_API=3
     command: >
-      bash -c "
-      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
-        until pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot --host=postgres_primary --port=5432;
-        do
-          echo 'Waiting for primary to connect...';
-          sleep 1;
-        done;
-      fi;
-      chmod 0700 /var/lib/postgresql/data;
-      postgres
-      "
+      etcd
+      --name etcd0
+      --data-dir /etcd-data
+      --advertise-client-urls http://etcd:2379
+      --listen-client-urls http://0.0.0.0:2379
+      --listen-peer-urls http://0.0.0.0:2380
+      --initial-advertise-peer-urls http://etcd:2380
+      --initial-cluster etcd0=http://etcd:2380
+      --initial-cluster-state new
+      --initial-cluster-token patroni-etcd-cluster
+      --enable-v2=true
+    volumes:
+      - ./data/etcd_data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - lb-net
+
+  patroni_1:
+    image: ghcr.io/zalando/spilo-16:3.3-p1
+    restart: always
+    environment:
+      - SCOPE=pg-cluster
+      - ETCD_HOST=etcd:2379
+      - PGUSER_SUPERUSER=postgres
+      - PGPASSWORD_SUPERUSER=postgres_password
+      - PGUSER_STANDBY=standby
+      - PGPASSWORD_STANDBY=standby_password
+      - PGUSER_ADMIN=admin
+      - PGPASSWORD_ADMIN=admin_password
+      - PGDATA=/home/postgres/pgdata/pgroot/data
+      - ALLOW_NOSSL=true
     depends_on:
-      postgres_primary:
+      etcd:
         condition: service_healthy
     volumes:
-      - ./postgres_replica_data:/var/lib/postgresql/data
+      - ./data/patroni_1_data:/home/postgres/pgdata
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user --dbname=app_db || pg_isready -U replicator --dbname=postgres"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8008/health"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -149,17 +154,84 @@ services:
     networks:
       - lb-net
 
-  pgpool:
+  patroni_2:
+    image: ghcr.io/zalando/spilo-16:3.3-p1
+    restart: always
+    environment:
+      - SCOPE=pg-cluster
+      - ETCD_HOST=etcd:2379
+      - PGUSER_SUPERUSER=postgres
+      - PGPASSWORD_SUPERUSER=postgres_password
+      - PGUSER_STANDBY=standby
+      - PGPASSWORD_STANDBY=standby_password
+      - PGUSER_ADMIN=admin
+      - PGPASSWORD_ADMIN=admin_password
+      - PGDATA=/home/postgres/pgdata/pgroot/data
+      - ALLOW_NOSSL=true
+    depends_on:
+      etcd:
+        condition: service_healthy
+    volumes:
+      - ./data/patroni_2_data:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - lb-net
+
+  pgpool_1:
     build:
       context: pgpool
       dockerfile: Dockerfile
+    restart: always
     depends_on:
-      postgres_primary:
+      patroni_1:
         condition: service_healthy
-      postgres_replica:
+      patroni_2:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db -h localhost -p 5432"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres -h localhost -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lb-net
+
+  pgpool_2:
+    build:
+      context: pgpool
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      patroni_1:
+        condition: service_healthy
+      patroni_2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres -h localhost -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lb-net
+
+  haproxy_db:
+    image: haproxy:2.9
+    restart: always
+    volumes:
+      - ./haproxy/haproxy-db.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      pgpool_1:
+        condition: service_healthy
+      pgpool_2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -172,5 +244,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_primary_data:
-  postgres_replica_data:
+  ./data/etcd_data:
+  ./data/patroni_1_data:
+  ./data/patroni_2_data:
