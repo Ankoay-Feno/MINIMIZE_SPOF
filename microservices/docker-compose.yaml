@@ -1,0 +1,82 @@
+services:
+  backend_1:
+    build: 
+      context: backend
+      dockerfile: Dockerfile
+    environment:
+      - ROOT_PATH=/api
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/machine-info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - lb-net
+
+  backend_2:
+    build: 
+      context: backend
+      dockerfile: Dockerfile
+    environment:
+      - ROOT_PATH=/api
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/machine-info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks:
+      - lb-net
+    
+  frontend_1:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      backend_1:
+        condition: service_healthy
+      backend_2:
+        condition: service_healthy
+
+    networks:
+      - lb-net
+    
+  frontend_2:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    env_file:
+      - ./frontend/.env
+    depends_on:
+      backend_1:
+        condition: service_healthy
+      backend_2:
+        condition: service_healthy
+
+    networks:
+      - lb-net
+
+  haproxy:
+    image: haproxy:2.9
+    container_name: haproxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      backend_1:
+        condition: service_healthy
+      backend_2:
+        condition: service_healthy
+
+    networks:
+      - lb-net
+
+networks:
+  lb-net:
+    driver: bridge
