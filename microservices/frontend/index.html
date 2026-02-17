@@ -9,15 +9,48 @@
   </head>
   <body>
     <main class="container">
-      <h1>Etat du backend</h1>
-      <p class="subtitle">Reponse de l'API <code>/machine-info</code></p>
+      <h1>Backend + Todos</h1>
+      <p class="subtitle">Operations CRUD des todos via le backend FastAPI.</p>
 
-      <div class="actions">
-        <button id="refreshBtn" type="button">Rafraichir</button>
-        <span id="status" class="status">Chargement...</span>
+      <div class="dashboard">
+        <section class="panel panel-main">
+          <h2>Todos</h2>
+          <form id="todoForm" class="todo-form">
+            <input
+              id="titleInput"
+              name="title"
+              type="text"
+              maxlength="200"
+              placeholder="Titre du todo"
+              required
+            />
+            <input
+              id="descriptionInput"
+              name="description"
+              type="text"
+              maxlength="1000"
+              placeholder="Description (optionnelle)"
+            />
+            <button id="createBtn" type="submit">Ajouter</button>
+          </form>
+
+          <div class="actions">
+            <button id="reloadTodosBtn" type="button">Recharger</button>
+            <span id="todoStatus" class="status">Chargement...</span>
+          </div>
+
+          <ul id="todoList" class="todo-list" aria-live="polite"></ul>
+        </section>
+
+        <section class="panel panel-side">
+          <h2>Info backend</h2>
+          <div class="actions">
+            <button id="refreshBtn" type="button">Rafraichir</button>
+            <span id="status" class="status">Chargement...</span>
+          </div>
+          <pre id="output" class="output" aria-live="polite"></pre>
+        </section>
       </div>
-
-      <pre id="output" class="output" aria-live="polite"></pre>
     </main>
 
     <script src="config.js"></script>

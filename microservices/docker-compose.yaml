@@ -3,12 +3,15 @@ services:
     build: 
       context: backend
       dockerfile: Dockerfile
-    environment:
-      - ROOT_PATH=/api
+    env_file:
+      - ./backend/.env
+    depends_on:
+      pgpool:
+        condition: service_healthy
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/machine-info"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -20,10 +23,13 @@ services:
     build: 
       context: backend
       dockerfile: Dockerfile
-    environment:
-      - ROOT_PATH=/api
+    env_file:
+      - ./backend/.env
+    depends_on:
+      pgpool:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/machine-info"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -77,6 +83,94 @@ services:
     networks:
       - lb-net
 
+  postgres_primary:
+    image: postgres:16-alpine
+    user: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_DB: app_db
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_HOST_AUTH_METHOD: "scram-sha-256\nhost replication all 0.0.0.0/0 md5"
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    command: >
+      postgres
+      -c wal_level=replica
+      -c hot_standby=on
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby_feedback=on
+    volumes:
+      - ./postgres_primary_data:/var/lib/postgresql/data
+      - ./postgres/00_init.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user --dbname=app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lb-net
+
+  postgres_replica:
+    image: postgres:16-alpine
+    user: postgres
+    restart: always
+    ports:
+      - "5433:5432"
+    environment:
+      PGUSER: replicator
+      PGPASSWORD: replicator_password
+    command: >
+      bash -c "
+      if [ ! -s /var/lib/postgresql/data/PG_VERSION ]; then
+        until pg_basebackup --pgdata=/var/lib/postgresql/data -R --slot=replication_slot --host=postgres_primary --port=5432;
+        do
+          echo 'Waiting for primary to connect...';
+          sleep 1;
+        done;
+      fi;
+      chmod 0700 /var/lib/postgresql/data;
+      postgres
+      "
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+    volumes:
+      - ./postgres_replica_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user --dbname=app_db || pg_isready -U replicator --dbname=postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - lb-net
+
+  pgpool:
+    build:
+      context: pgpool
+      dockerfile: Dockerfile
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+      postgres_replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db -h localhost -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - lb-net
+
 networks:
   lb-net:
     driver: bridge
+
+volumes:
+  postgres_primary_data:
+  postgres_replica_data:
