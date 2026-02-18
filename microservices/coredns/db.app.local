@@ -1,0 +1,25 @@
+$ORIGIN app.local.
+$TTL 5
+@   IN SOA ns1.app.local. admin.app.local. (
+        2026021802 ; serial
+        3600       ; refresh
+        600        ; retry
+        86400      ; expire
+        5          ; minimum
+)
+    IN NS ns1.app.local.
+ns1 IN A 172.31.0.53
+
+; DNS round-robin record used as frontend entrypoint.
+@   IN A 172.31.0.100
+@   IN A 172.31.0.101
+
+; Direct records for troubleshooting.
+haproxy_1 IN A 172.31.0.100
+haproxy_2 IN A 172.31.0.101
+
+; DB entrypoint load-balanced across two DB HAProxy instances.
+haproxy-db IN A 172.31.0.102
+haproxy-db IN A 172.31.0.103
+haproxy_db_1 IN A 172.31.0.102
+haproxy_db_2 IN A 172.31.0.103
