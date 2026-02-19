@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from prometheus_fastapi_instrumentator import Instrumentator
 import psycopg
 from psycopg import OperationalError
 from psycopg import Error as PsycopgError
@@ -20,6 +21,7 @@ DB_NAME = os.getenv("DB_NAME", "app_db")
 DB_USER = os.getenv("DB_USER", "app_user")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "app_password")
 DB_CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", "5"))
+ENABLE_METRICS = os.getenv("ENABLE_METRICS", "true").lower() == "true"
 
 app = FastAPI(
     title="Machine Info API",
@@ -37,6 +39,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if ENABLE_METRICS:
+    Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app, include_in_schema=False)
 
 START_TIME = time.time()
 
@@ -160,6 +165,7 @@ def read_root() -> dict:
         "endpoints": {
             "machine_info": f"{ROOT_PATH}/machine-info" if ROOT_PATH else "/machine-info",
             "todos": f"{ROOT_PATH}/todos" if ROOT_PATH else "/todos",
+            "metrics": f"{ROOT_PATH}/metrics" if ROOT_PATH else "/metrics",
         },
     }
 

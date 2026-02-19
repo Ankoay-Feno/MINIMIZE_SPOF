@@ -1,0 +1,26 @@
+[sources.docker]
+type = "docker_logs"
+exclude_containers = ["microservices-vector-1"]
+
+[transforms.normalize]
+type = "remap"
+inputs = ["docker"]
+source = '''
+.service = to_string(.label.com_docker_compose_service) ?? "unknown"
+.compose_project = to_string(.label.com_docker_compose_project) ?? "unknown"
+.container_name = to_string(.container_name) ?? "unknown"
+.container_id = to_string(.container_id) ?? "unknown"
+'''
+
+[sinks.loki]
+type = "loki"
+inputs = ["normalize"]
+endpoint = "http://loki:3100"
+encoding.codec = "json"
+labels.job = "docker"
+labels.service = "{{ service }}"
+labels.compose_project = "{{ compose_project }}"
+labels.container = "{{ container_name }}"
+labels.container_id = "{{ container_id }}"
+remove_label_fields = true
+remove_timestamp = false

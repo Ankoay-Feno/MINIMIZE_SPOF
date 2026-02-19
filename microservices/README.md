@@ -8,6 +8,7 @@ Cette stack utilise un failover automatique:
 - `pgpool_1` et `pgpool_2` (routage SQL)
 - `haproxy_db_1` et `haproxy_db_2` (TCP 5432 devant les 2 pgpool)
 - `haproxy_1` et `haproxy_2` (HTTP web/API)
+- `prometheus`, `grafana`, `loki`, `vector`, `cadvisor` (observabilite)
 
 Fichiers utilises:
 - `docker-compose.yaml`
@@ -44,6 +45,25 @@ Verifier le leader Patroni:
 Ports web:
 - `http://localhost:8081` via `haproxy_1`
 - `http://localhost:8080` via `haproxy_2`
+- `http://localhost:9090` Prometheus
+- `http://localhost:9115` Blackbox Exporter
+- `http://localhost:3000` Grafana (admin/admin)
+- `http://localhost:3100/ready` Loki
+- `http://localhost:8088/metrics` cAdvisor
+- `http://localhost:8080/prometheus/` via HAProxy
+- `http://localhost:8080/grafana/` via HAProxy
+
+Metrics backend:
+- `http://localhost:8000/metrics` (backend_1)
+- `http://localhost:8000/health/db`
+
+Sondes (Prometheus + Blackbox):
+- HTTP: `frontend_1`, `frontend_2`, `haproxy_1`, `haproxy_2`, `patroni_1`, `patroni_2`, `etcd`
+- TCP: `haproxy_db_1:5432`, `haproxy_db_2:5432`, `pgpool_1:5432`, `pgpool_2:5432`, `patroni_1:5432`, `patroni_2:5432`
+
+Logs centralises:
+- Tous les logs Docker sont collectes par `vector` et envoyes vers `loki`.
+- Dans Grafana, utilise la datasource `Loki` pour les requetes de logs.
 
 Note DNS:
 - Le domaine `app.local` est resolu uniquement a l'interieur du reseau Docker (via `coredns`).
