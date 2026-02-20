@@ -17,8 +17,8 @@ services:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 5s
       timeout: 3s
-      retries: 10
-      start_period: 10s
+      retries: 20
+      start_period: 60s
     dns:
       - 172.31.0.53
     networks:
@@ -40,8 +40,8 @@ services:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 5s
       timeout: 3s
-      retries: 10
-      start_period: 10s
+      retries: 20
+      start_period: 60s
     dns:
       - 172.31.0.53
     networks:
@@ -99,7 +99,7 @@ services:
     restart: always
     user: "0:0"
     ports:
-      - "8081:80"
+      - "80:80"
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:
@@ -116,7 +116,7 @@ services:
     restart: always
     user: "0:0"
     ports:
-      - "8080:80"
+      - "81:80"
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     depends_on:
