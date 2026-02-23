@@ -11,8 +11,6 @@ services:
         condition: service_healthy
       haproxy_db_2:
         condition: service_healthy
-    ports:
-      - "8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/"]
       interval: 5s
@@ -80,6 +78,18 @@ services:
       - 172.31.0.53
     networks:
       - lb-net
+
+  firefox:
+    image: jlesage/firefox:v26.02.3
+    restart: always
+    user: "0:0"
+    ports:
+      - "5800:5800"
+    dns:
+      - 172.31.0.53
+    networks:
+      - lb-net
+
   coredns:
     image: coredns/coredns:1.11.3
     command: -conf /etc/coredns/Corefile

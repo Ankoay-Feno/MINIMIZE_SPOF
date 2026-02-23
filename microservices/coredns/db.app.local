@@ -1,7 +1,7 @@
 $ORIGIN app.local.
 $TTL 5
 @   IN SOA ns1.app.local. admin.app.local. (
-        2026021802 ; serial
+        2026022301 ; serial
         3600       ; refresh
         600        ; retry
         86400      ; expire
@@ -13,6 +13,8 @@ ns1 IN A 172.31.0.53
 ; DNS round-robin record used as frontend entrypoint.
 @   IN A 172.31.0.100
 @   IN A 172.31.0.101
+haproxy IN A 172.31.0.100
+haproxy IN A 172.31.0.101
 
 ; Direct records for troubleshooting.
 haproxy_1 IN A 172.31.0.100
