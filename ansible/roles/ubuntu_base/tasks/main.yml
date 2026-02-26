@@ -1,0 +1,21 @@
+---
+- name: Validate target OS is Ubuntu
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == "Ubuntu"
+    fail_msg: "This role currently supports Ubuntu only."
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - git
+      - gnupg
+      - lsb-release
+      - python3
+      - python3-apt
+      - python3-pip
+      - rsync
+    state: present
+    update_cache: true

@@ -1,0 +1,142 @@
+---
+- name: Validate requested stack state
+  ansible.builtin.assert:
+    that:
+      - stack_state in ["present", "absent", "restart"]
+      - stack_source_type in ["git", "local"]
+    fail_msg: "stack_state must be one of: present, absent, restart."
+
+- name: Check SSH key exists on control host
+  ansible.builtin.stat:
+    path: "{{ stack_git_ssh_key_local_path }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: stack_git_key_local
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "git"
+    - stack_git_manage_ssh_key | bool
+
+- name: Fail when local SSH key is missing
+  ansible.builtin.assert:
+    that:
+      - stack_git_key_local.stat.exists
+    fail_msg: "Local git SSH key not found: {{ stack_git_ssh_key_local_path }}"
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "git"
+    - stack_git_manage_ssh_key | bool
+
+- name: Ensure remote .ssh directory exists for git user
+  ansible.builtin.file:
+    path: "/home/{{ stack_git_ssh_user }}/.ssh"
+    state: directory
+    owner: "{{ stack_git_ssh_user }}"
+    group: "{{ stack_git_ssh_user }}"
+    mode: "0700"
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "git"
+    - stack_git_manage_ssh_key | bool
+
+- name: Copy git SSH private key to target
+  ansible.builtin.copy:
+    src: "{{ stack_git_ssh_key_local_path }}"
+    dest: "{{ stack_git_ssh_key_target_path }}"
+    owner: "{{ stack_git_ssh_user }}"
+    group: "{{ stack_git_ssh_user }}"
+    mode: "0600"
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "git"
+    - stack_git_manage_ssh_key | bool
+
+- name: Add github.com to known_hosts for git user
+  ansible.builtin.shell: >-
+    ssh-keyscan -H github.com >> /home/{{ stack_git_ssh_user }}/.ssh/known_hosts
+  args:
+    creates: "/home/{{ stack_git_ssh_user }}/.ssh/known_hosts"
+  become_user: "{{ stack_git_ssh_user }}"
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "git"
+    - stack_git_manage_ssh_key | bool
+
+- name: Ensure remote project directory exists
+  ansible.builtin.file:
+    path: "{{ stack_compose_dir if stack_source_type == 'local' else stack_remote_dir }}"
+    state: directory
+    mode: "0755"
+  when: stack_state in ["present", "restart"]
+
+- name: Checkout project from Git repository
+  ansible.builtin.git:
+    repo: "{{ stack_git_repo }}"
+    dest: "{{ stack_remote_dir }}"
+    version: "{{ stack_git_version }}"
+    accept_hostkey: "{{ stack_git_accept_hostkey }}"
+    key_file: "{{ stack_git_ssh_key_target_path if stack_git_manage_ssh_key else omit }}"
+    ssh_opts: "{{ (stack_git_ssh_opts ~ ' -i ' ~ stack_git_ssh_key_target_path) if stack_git_manage_ssh_key else omit }}"
+    update: true
+    force: true
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "git"
+
+- name: Copy microservices project to target (local mode)
+  ansible.builtin.copy:
+    src: "{{ stack_local_src }}/"
+    dest: "{{ stack_compose_dir }}/"
+    mode: preserve
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_source_type == "local"
+
+- name: Pull images before deploy (optional)
+  ansible.builtin.command:
+    cmd: docker compose -f {{ stack_compose_file }} pull
+    chdir: "{{ stack_compose_dir }}"
+  when:
+    - stack_state in ["present", "restart"]
+    - stack_pull | bool
+
+- name: Check required env files
+  ansible.builtin.stat:
+    path: "{{ stack_compose_dir }}/{{ item }}"
+  loop:
+    - backend/.env
+    - frontend/.env
+  register: stack_env_files
+  when: stack_state in ["present", "restart"]
+
+- name: Bootstrap missing env files from .env.example
+  ansible.builtin.copy:
+    src: "{{ stack_compose_dir }}/{{ item.item }}.example"
+    dest: "{{ stack_compose_dir }}/{{ item.item }}"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ stack_env_files.results }}"
+  when:
+    - stack_state in ["present", "restart"]
+    - not item.stat.exists
+
+- name: Deploy stack
+  ansible.builtin.command:
+    cmd: >-
+      timeout {{ stack_deploy_timeout_seconds }}s
+      docker compose -f {{ stack_compose_file }} up -d
+      {{ '--build' if stack_build | bool else '' }}
+      {{ '--remove-orphans' if stack_remove_orphans | bool else '' }}
+    chdir: "{{ stack_compose_dir }}"
+  register: stack_deploy_result
+  retries: "{{ stack_deploy_retries }}"
+  delay: "{{ stack_deploy_retry_delay_seconds }}"
+  until: stack_deploy_result.rc == 0
+  when: stack_state in ["present", "restart"]
+
+- name: Stop stack
+  ansible.builtin.command:
+    cmd: docker compose -f {{ stack_compose_file }} down
+    chdir: "{{ stack_compose_dir }}"
+  when: stack_state == "absent"

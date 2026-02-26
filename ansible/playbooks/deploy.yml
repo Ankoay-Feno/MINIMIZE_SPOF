@@ -1,0 +1,16 @@
+---
+- name: Deploy microservices stack on Ubuntu
+  hosts: production
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/production/vault.yaml
+
+  roles:
+    - role: ubuntu_base
+      become: true
+    - role: docker_engine
+      become: true
+    - role: stack_deploy
+      become: true

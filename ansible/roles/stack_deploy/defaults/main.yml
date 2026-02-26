@@ -1,0 +1,32 @@
+---
+stack_source_type: git          # git | local
+stack_git_repo: git@github.com:Ankoay-Feno/MINIMIZE_SPOF.git
+stack_git_version: main
+stack_git_accept_hostkey: true
+stack_git_manage_ssh_key: false
+stack_git_ssh_user: "{{ ansible_user | default(ansible_user_id) }}"
+stack_git_ssh_key_local_path: "{{ playbook_dir }}/../../keys/id_rsa"
+stack_git_ssh_key_target_path: "/home/{{ stack_git_ssh_user }}/.ssh/id_ansible_git"
+stack_git_ssh_opts: >-
+  -o IdentitiesOnly=yes
+  -o StrictHostKeyChecking=accept-new
+  -o UserKnownHostsFile=/home/{{ stack_git_ssh_user }}/.ssh/known_hosts
+
+# For source_type=git: repository checkout root on target.
+stack_remote_dir: /opt/MINIMIZE_SPOF
+
+# Compose project location relative to checkout root.
+stack_project_subdir: microservices
+stack_compose_dir: "{{ stack_remote_dir }}/{{ stack_project_subdir }}"
+
+# For source_type=local: local folder to copy to stack_compose_dir.
+stack_local_src: "{{ playbook_dir }}/../../microservices"
+
+stack_compose_file: docker-compose.yaml
+stack_state: present
+stack_build: true
+stack_pull: false
+stack_remove_orphans: true
+stack_deploy_timeout_seconds: 1800
+stack_deploy_retries: 3
+stack_deploy_retry_delay_seconds: 20

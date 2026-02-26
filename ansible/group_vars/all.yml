@@ -1,0 +1,31 @@
+---
+# Source mode: git (recommended) or local
+stack_source_type: git
+
+# Git source configuration
+stack_git_repo: git@github.com:Ankoay-Feno/MINIMIZE_SPOF.git
+stack_git_version: main
+stack_git_accept_hostkey: true
+stack_git_manage_ssh_key: true
+# Keep Git SSH operations on the same remote user used by Ansible inventory.
+stack_git_ssh_user: "ankoay"
+stack_git_ssh_key_local_path: /home/ankoay/clone/deploy_microservices_with_ansible/ansible/keys/git
+stack_git_ssh_key_target_path: "/home/ankoay/.ssh/id_ansible_git"
+
+# Repository checkout directory on target machine
+stack_remote_dir: /opt/MINIMIZE_SPOF
+
+# Compose project path
+stack_project_subdir: microservices
+stack_compose_dir: "{{ stack_remote_dir }}/{{ stack_project_subdir }}"
+
+# Local source directory used only if stack_source_type=local
+stack_local_src: "{{ playbook_dir }}/../../microservices"
+
+# Docker Compose behavior
+stack_compose_file: docker-compose.yaml
+
+stack_state: present         # present | absent | restart
+stack_build: true
+stack_pull: false
+stack_remove_orphans: true
